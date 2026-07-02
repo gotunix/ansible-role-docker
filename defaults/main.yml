@@ -1,0 +1,38 @@
+---
+# defaults file for docker role
+
+docker_install_compose: true
+docker_tls_enabled: true
+
+# The default path to lay down the certificates
+docker_tls_dir: "/etc/docker/tls"
+
+# Vault decrypts these implicitly at runtime when they are requested natively in the variables file!
+
+# ========================
+# HOST DOCKER NETWORKS
+# ========================
+# Arrays of external shared networks you want explicitly created natively
+# across your Docker hosts prior to executing compose payloads!
+# Example: docker_networks: [ "cloudflared-net", "database-proxy" ]
+docker_networks: []
+
+# ========================
+# COMPOSE APP DEPLOYMENT
+# ========================
+# You can define applications in your `host_vars/hostname.yml` strictly using this array structure!
+# Ansible will intelligently dynamically deploy the compose stacks specifically to each host.
+docker_apps: []
+# Example:
+# docker_apps:
+#   - name: "discord_notifier"
+#     dest_dir: "/opt/docker/discord_notifier"
+#     compose_content: |
+#       services:
+#         bot:
+#           image: "my-bot:latest"
+#     env_content: |
+#       TOKEN=123
+#     custom_files:
+#       - dest: "amdgpu.ids"
+#         content: "..."

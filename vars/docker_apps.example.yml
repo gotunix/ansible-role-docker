@@ -1,0 +1,84 @@
+---
+# ==============================================================================
+# Example Host Variables for Docker Compose App Deployment
+# ==============================================================================
+# Drop these arrays directly into your Ansible `host_vars/hostname.yml` files!
+# Ansible will iterate through this list and logically ensure every stack
+# gracefully spins up without ever touching a manual SSH connection.
+
+docker_apps:
+  # ─[ App 1: Plex Media Server (AMD GPU Edition) ]────────────────────────────
+  - name: "plex"
+    dest_dir: "/opt/docker/plex"
+    owner: "root"
+    group: "root"
+
+    # Pre-create supplementary directories so Docker doesn't map them incorrectly as 'root' natively!
+    directories:
+      - path: "/opt/docker/plex/config"
+        owner: "1000"
+        group: "1000"
+        mode: "0755"
+
+    # 1. Provide the physical docker-compose.yaml string structure!
+    compose_content: |
+      services:
+        plex:
+          image: lscr.io/linuxserver/plex:latest
+          container_name: plex-server
+          network_mode: host
+          privileged: true
+          env_file:
+            - .env
+          volumes:
+            - /opt/docker/plex/config:/config
+            - /data:/data
+            - /dev/shm:/transcode
+            - /lib/firmware/amdgpu:/lib/firmware/amdgpu:ro
+            - ./amdgpu.ids:/home/runner/_work/plex-conan/plex-conan/.conan/data/libdrm/2.4.120-6/plex/main/build/678777ee2ca8706ca90cf805e0dd88235f6d7f05/meson-install/share/libdrm/amdgpu.ids:ro
+          devices:
+            - /dev/dri:/dev/dri
+          restart: unless-stopped
+
+    # 2. Inject your perfectly secured .env payloads!
+    env_content: |
+      PUID=0
+      PGID=0
+      TZ=America/New_York
+      VERSION=docker
+
+    # 3. Create explicit configuration files (Like the infamous AMD bypass!)
+    custom_files:
+      - dest: "amdgpu.ids"
+        mode: "0444"
+        content: |
+          4133, AMD Radeon RX 480
+          barcelo, AMD Barcelo Encoder Bypass
+          1638, AMD Radeon VCN Decode Handle
+
+
+  # ─[ App 2: Nginx Web Server ]───────────────────────────────────────────────
+  - name: "nginx"
+    dest_dir: "/opt/docker/nginx"
+
+    compose_content: |
+      services:
+        web:
+          image: nginx:alpine
+          container_name: nginx-gateway
+          ports:
+            - "80:80"
+          volumes:
+            - ./index.html:/usr/share/nginx/html/index.html:ro
+          restart: always
+
+    custom_files:
+      - dest: "index.html"
+        mode: "0644"
+        content: |
+          <!DOCTYPE html>
+          <html>
+            <body>
+              <h1>Deployed via Ansible's docker_apps host_vars abstraction!</h1>
+            </body>
+          </html>

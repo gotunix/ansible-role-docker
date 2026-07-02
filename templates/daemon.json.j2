@@ -1,0 +1,11 @@
+{
+{% if docker_tls_enabled %}
+  "hosts": ["fd://", "tcp://0.0.0.0:2376"],
+  "tlsverify": true,
+  "tlscacert": "{{ docker_tls_dir }}/ca.pem",
+  "tlscert": "{{ docker_tls_dir }}/server-cert.pem",
+  "tlskey": "{{ docker_tls_dir }}/server-key.pem"
+{% else %}
+  "hosts": ["fd://"]
+{% endif %}
+}

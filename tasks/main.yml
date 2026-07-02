@@ -1,0 +1,153 @@
+---
+# tasks file for docker
+
+- name: Install basic Docker prerequisites for Debian 13
+  ansible.builtin.apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg
+      - lsb-release
+    state: present
+    update_cache: true
+
+- name: Add GPG key
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      install -m 0755 -d /etc/apt/keyrings
+      curl -fsSL https://download.docker.com/linux/debian/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+      chmod a+r /etc/apt/keyrings/docker.gpg
+  register: docker_gpg_result
+  failed_when: docker_gpg_result.failed | bool
+  changed_when: docker_gpg_result.changed | bool
+
+- name: Add repos
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      echo \
+      "deb [arch="$(dpkg --print-architecture)" signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \
+      "$(. /etc/os-release && echo "$VERSION_CODENAME")" stable" | \
+      tee /etc/apt/sources.list.d/docker.list > /dev/null
+  register: docker_repo_result
+  failed_when: docker_repo_result.failed | bool
+  changed_when: docker_repo_result.changed | bool
+
+- name: Install Docker packages
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: present
+    update_cache: true
+
+# ========================
+# TLS & NATIVE AUTH SETUP
+# ========================
+
+- name: TLS | Create the strict Docker TLS native directory securely
+  ansible.builtin.file:
+    path: "{{ docker_tls_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+  when: docker_tls_enabled | bool
+
+- name: TLS | Distribute the decrypted Vaulted CA Certificate globally
+  ansible.builtin.copy:
+    content: "{{ docker_tls_ca_cert }}"
+    dest: "{{ docker_tls_dir }}/ca.pem"
+    owner: root
+    group: root
+    mode: '0444'
+  when: docker_tls_enabled | bool
+  notify: Restart docker
+
+- name: TLS | Distribute the decrypted Vaulted Server Cert
+  ansible.builtin.copy:
+    content: "{{ docker_tls_server_cert }}"
+    dest: "{{ docker_tls_dir }}/server-cert.pem"
+    owner: root
+    group: root
+    mode: '0444'
+  when: docker_tls_enabled | bool
+  notify: Restart docker
+
+- name: TLS | Distribute the decrypted Vaulted Server Key exclusively (0400 mode)
+  ansible.builtin.copy:
+    content: "{{ docker_tls_server_key }}"
+    dest: "{{ docker_tls_dir }}/server-key.pem"
+    owner: root
+    group: root
+    mode: '0400'
+  when: docker_tls_enabled | bool
+  notify: Restart docker
+
+# ========================
+# DAEMON & NETWORKING SETUP
+# ========================
+
+- name: Networking | Creates the systemd drop-in directory to override '-H'
+  ansible.builtin.file:
+    path: /etc/systemd/system/docker.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Networking | Override the hardcoded systemd service strings for daemon.json
+  ansible.builtin.template:
+    src: override.conf.j2
+    dest: /etc/systemd/system/docker.service.d/override.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify:
+    - Reload systemd daemon
+    - Restart docker
+
+- name: Networking | Inject the daemon.json config enforcing TLS Handshake protocols!
+  ansible.builtin.template:
+    src: daemon.json.j2
+    dest: /etc/docker/daemon.json
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart docker
+
+- name: State | Ensure Docker daemon is gracefully started and enabled perfectly
+  ansible.builtin.systemd:
+    name: docker
+    state: started
+    enabled: true
+
+# ========================
+# HOST DOCKER NETWORKS
+# ========================
+
+- name: Networks | Idempotently create shared external Host networks flawlessly natively
+  ansible.builtin.shell:
+    cmd: "docker network inspect {{ item }} || docker network create {{ item }}"
+  loop: "{{ docker_networks }}"
+  loop_control:
+    label: "{{ item }}"
+  when: docker_networks is defined and docker_networks | length > 0
+  register: docker_net
+  changed_when: docker_net.stdout | length > 0 and 'Error' not in docker_net.stdout
+
+# ========================
+# COMPOSE DEPLOYMENTS
+# ========================
+
+- name: Deployment | Intelligently iterate and orchestrate custom Docker Compose stacks dynamically
+  ansible.builtin.include_tasks: compose_apps.yml
+  loop: "{{ docker_apps }}"
+  loop_control:
+    loop_var: app
+  when: docker_apps is defined and docker_apps | length > 0

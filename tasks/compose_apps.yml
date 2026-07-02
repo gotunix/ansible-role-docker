@@ -1,0 +1,63 @@
+---
+- name: "Ensure destination directory exists"
+  ansible.builtin.file:
+    path: "{{ app.dest_dir }}"
+    state: directory
+    owner: "{{ app.owner | default('root') }}"
+    group: "{{ app.group | default('root') }}"
+    mode: '0755'
+
+- name: "Ensure supplementary mapped volumes explicitly exist"
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner | default(app.owner | default('root')) }}"
+    group: "{{ item.group | default(app.group | default('root')) }}"
+    mode: "{{ item.mode | default('0755') }}"
+  loop: "{{ app.directories | default([]) }}"
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: "Write primary docker-compose.yml payload"
+  ansible.builtin.copy:
+    content: "{{ app.compose_content }}\n"
+    dest: "{{ app.dest_dir }}/docker-compose.yml"
+    owner: "{{ app.owner | default('root') }}"
+    group: "{{ app.group | default('root') }}"
+    mode: '0644'
+  register: compose_file
+
+- name: "Securely inject .env parameters if provided"
+  ansible.builtin.copy:
+    content: "{{ app.env_content }}\n"
+    dest: "{{ app.dest_dir }}/.env"
+    owner: "{{ app.owner | default('root') }}"
+    group: "{{ app.group | default('root') }}"
+    mode: '0600'
+  when: app.env_content is defined
+  register: env_file
+
+- name: "Inject miscellaneous configuration files dynamically"
+  ansible.builtin.copy:
+    content: "{{ item.content }}\n"
+    dest: "{{ app.dest_dir }}/{{ item.dest }}"
+    owner: "{{ app.owner | default('root') }}"
+    group: "{{ app.group | default('root') }}"
+    mode: "{{ item.mode | default('0644') }}"
+  loop: "{{ app.custom_files | default([]) }}"
+  loop_control:
+    label: "{{ item.dest }}"
+  register: custom_files
+
+- name: "Execute intelligent container deployment tracking via CLI"
+  ansible.builtin.command: docker compose up -d --remove-orphans
+  args:
+    chdir: "{{ app.dest_dir }}"
+  register: compose_up
+  changed_when: >
+    'Started' in compose_up.stderr or
+    'Created' in compose_up.stderr or
+    'Recreated' in compose_up.stderr or
+    'Recreating' in compose_up.stderr or
+    'Starting' in compose_up.stderr or
+    'Pulled' in compose_up.stderr
